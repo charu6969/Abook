@@ -13,6 +13,15 @@ from notepad_view import NotepadView
 from text_view import TextView
 from text_processor import TextProcessor
 
+# New UI components
+try:
+    from settings_panels import WiFiPanel, BatteryPanel, TimePanel
+    from gestures import GestureRecognizer, GestureIndicator, GestureTutorial
+    ENHANCED_UI_AVAILABLE = True
+except ImportError:
+    ENHANCED_UI_AVAILABLE = False
+    print("[Info] Enhanced UI components not available")
+
 
 class ABookApp:
     """Main application class"""
@@ -68,6 +77,30 @@ class ABookApp:
         self.keyboard = OnScreenKeyboard(self.font_s)
         self.renaming_idx = None
         self.temp_name = ""
+        
+        # Settings panels and gestures (NEW!)
+        if ENHANCED_UI_AVAILABLE:
+            self.wifi_panel = WiFiPanel(fonts)
+            self.battery_panel = BatteryPanel(fonts)
+            self.time_panel = TimePanel(fonts)
+            self.gesture_recognizer = GestureRecognizer()
+            self.gesture_indicator = GestureIndicator(fonts)
+            self.gesture_tutorial = GestureTutorial(fonts)
+            
+            self.show_wifi_panel = False
+            self.show_battery_panel = False
+            self.show_time_panel = False
+            self.show_gesture_tutorial = True  # Show on first launch
+        else:
+            self.wifi_panel = None
+            self.battery_panel = None
+            self.time_panel = None
+            self.gesture_recognizer = None
+            self.gesture_indicator = None
+            self.show_wifi_panel = False
+            self.show_battery_panel = False
+            self.show_time_panel = False
+            self.show_gesture_tutorial = False
         
         # Processing state
         self.processing = False
@@ -407,6 +440,12 @@ class ABookApp:
                     self.handle_mouse_down(mouse_pos)
                 
                 elif event.type == pygame.MOUSEBUTTONUP:
+                    # Detect gestures
+                    if self.gesture_recognizer:
+                        gesture, data = self.gesture_recognizer.end_touch(mouse_pos)
+                        if gesture:
+                            self.handle_gesture(gesture, data)
+                    
                     if self.current_view == 'notepad':
                         self.notepad_view.stop_drawing()
                 
@@ -449,6 +488,25 @@ class ABookApp:
                     msg = self.font_l.render("Processing...", True, COLOR_WHITE)
                     self.portrait_surface.blit(msg, (300 - 100, 512))
             
+            # Draw settings panels on top of everything (NEW!)
+            if ENHANCED_UI_AVAILABLE:
+                if self.show_wifi_panel and self.wifi_panel:
+                    self.wifi_panel.draw(self.portrait_surface)
+                
+                if self.show_battery_panel and self.battery_panel:
+                    self.battery_panel.draw(self.portrait_surface)
+                
+                if self.show_time_panel and self.time_panel:
+                    self.time_panel.draw(self.portrait_surface)
+                
+                # Draw gesture indicator
+                if self.gesture_indicator:
+                    self.gesture_indicator.draw(self.portrait_surface)
+                
+                # Draw gesture tutorial on first launch
+                if self.show_gesture_tutorial and self.gesture_tutorial:
+                    self.gesture_tutorial.draw(self.portrait_surface)
+            
             # Rotate portrait surface 90° counter-clockwise - buttons on LEFT side
             rotated = pygame.transform.rotate(self.portrait_surface, 90)
             
@@ -461,12 +519,96 @@ class ABookApp:
     
     def handle_mouse_down(self, pos):
         """Handle mouse down events"""
+        # Start gesture recognition
+        if self.gesture_recognizer:
+            self.gesture_recognizer.start_touch(pos)
+        
+        # Check if clicking on settings panels first
+        if self.show_wifi_panel and self.wifi_panel:
+            action, data = self.wifi_panel.handle_click(pos)
+            if action:
+                self.handle_panel_action(action, data)
+                return
+        
+        if self.show_battery_panel and self.battery_panel:
+            action, data = self.battery_panel.handle_click(pos)
+            if action:
+                self.handle_panel_action(action, data)
+                return
+        
+        if self.show_time_panel and self.time_panel:
+            action, data = self.time_panel.handle_click(pos)
+            if action:
+                self.handle_panel_action(action, data)
+                return
+        
+        # Check gesture tutorial
+        if self.show_gesture_tutorial:
+            # Tutorial has a close button
+            if 200 <= pos[0] <= 400 and 720 <= pos[1] <= 770:
+                self.show_gesture_tutorial = False
+            return
+        
+        # Check status bar clicks (top 25px)
+        if pos[1] < 25:
+            # WiFi icon (left)
+            if pos[0] < 40:
+                self.show_wifi_panel = True
+                return
+            # Time (center - approximate)
+            elif 200 < pos[0] < 400:
+                self.show_time_panel = True
+                return
+            # Battery (right)
+            elif pos[0] > 555:
+                self.show_battery_panel = True
+                return
+        
+        # Regular view handling
         if self.current_view == 'home':
             self.handle_home_click(pos)
         elif self.current_view == 'notepad':
             self.handle_notepad_click(pos)
         elif self.current_view == 'text':
             self.handle_text_click(pos)
+    
+    def handle_gesture(self, gesture, data):
+        """Handle recognized gestures"""
+        if gesture == 'swipe_right' and data == 'back':
+            # Go back
+            if self.current_view == 'notepad' or self.current_view == 'text':
+                self.current_view = 'home'
+                if self.gesture_indicator:
+                    self.gesture_indicator.show('swipe_right')
+        elif gesture == 'swipe_left':
+            if self.gesture_indicator:
+                self.gesture_indicator.show('swipe_left')
+        elif gesture == 'swipe_up':
+            # Could be used for quick menu
+            pass
+        elif gesture == 'swipe_down':
+            # Could be used for notifications
+            pass
+        elif gesture == 'long_press':
+            # Future: context menu
+            pass
+    
+    def handle_panel_action(self, action, data):
+        """Handle actions from settings panels"""
+        if action == 'close_wifi':
+            self.show_wifi_panel = False
+        elif action == 'close_battery':
+            self.show_battery_panel = False
+        elif action == 'close_time':
+            self.show_time_panel = False
+        elif action == 'toggle_wifi':
+            print(f"[WiFi] Toggled: {data}")
+        elif action == 'connect_network':
+            print(f"[WiFi] Connecting to: {data}")
+        elif action == 'toggle_power_save':
+            print(f"[Battery] Power save: {data}")
+        elif action == 'toggle_time_format':
+            print(f"[Time] 24h format: {data}")
     
     def handle_home_click(self, pos):
         """Handle clicks on home view"""
