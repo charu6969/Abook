@@ -1,5 +1,5 @@
 """
-Modern Home View for ABook - Y Combinator Ready
+Modern Home View for ABook 
 """
 import pygame
 from config import *

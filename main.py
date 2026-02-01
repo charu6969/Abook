@@ -1,17 +1,18 @@
 """
 ABook - Digital Notebook Application
-Main application file
+Main application file - FULLY UPDATED
 """
 import pygame
 import sys
 from config import *
 from boot import run_boot_sequence
-from ui_components import OnScreenKeyboard
+from improved_ui_components import ImprovedKeyboard
 from models import Notebook
 from home_view import HomeView
 from notepad_view import NotepadView
 from text_view import TextView
 from text_processor import TextProcessor
+from lock_screen import LockScreen
 
 # New UI components
 try:
@@ -44,6 +45,10 @@ class ABookApp:
         self.font_l = pygame.font.SysFont('Arial', 32, bold=True)
         fonts = (self.font_s, self.font_m, self.font_l)
         
+        # Lock screen
+        self.lock_screen = LockScreen(fonts)
+        self.is_locked = True  # Start with lock screen
+        
         # Views
         self.home_view = HomeView(fonts)
         self.notepad_view = NotepadView(fonts)
@@ -73,8 +78,8 @@ class ABookApp:
         self.active_notebook_idx = 0
         self.active_layer_idx = 0
         
-        # UI components
-        self.keyboard = OnScreenKeyboard(self.font_s)
+        # UI components - Use improved keyboard
+        self.keyboard = ImprovedKeyboard(self.font_s)
         self.renaming_idx = None
         self.temp_name = ""
         
@@ -115,7 +120,6 @@ class ABookApp:
         book.layers = []
         
         # Chapter structure and key concepts
-        # User can add their own notes and highlights from the actual book
         chapter_pages = [
             ["ATOMIC HABITS", "", "by James Clear", "", "", "", "A study notebook"],
             ["", "INTRODUCTION", "", "The Surprising Power", "of Atomic Habits", "", "", "Notes:"],
@@ -437,20 +441,17 @@ class ABookApp:
                     sys.exit()
                 
                 elif event.type == pygame.MOUSEBUTTONDOWN:
-                    self.handle_mouse_down(mouse_pos)
-                
-                elif event.type == pygame.MOUSEBUTTONUP:
-                    # Detect gestures
-                    if self.gesture_recognizer:
-                        gesture, data = self.gesture_recognizer.end_touch(mouse_pos)
-                        if gesture:
-                            self.handle_gesture(gesture, data)
-                    
-                    if self.current_view == 'notepad':
-                        self.notepad_view.stop_drawing()
+                    # Handle lock screen
+                    if self.is_locked:
+                        self.lock_screen.handle_mouse_down(mouse_pos)
+                    else:
+                        self.handle_mouse_down(mouse_pos)
                 
                 elif event.type == pygame.MOUSEMOTION:
-                    if self.current_view == 'notepad' and self.notepad_view.drawing:
+                    # Handle lock screen swipe
+                    if self.is_locked:
+                        self.lock_screen.handle_mouse_motion(mouse_pos)
+                    elif self.current_view == 'notepad' and self.notepad_view.drawing:
                         notebook = self.notebooks[self.active_notebook_idx]
                         layer = notebook.layers[self.active_layer_idx]
                         # Update the surface with the new stroke
@@ -458,54 +459,76 @@ class ABookApp:
                         # Make sure the surface is marked as modified
                         layer.modified = True
                 
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    # Handle lock screen unlock
+                    if self.is_locked:
+                        if self.lock_screen.handle_mouse_up(mouse_pos):
+                            self.is_locked = False
+                            print("[Lock Screen] Unlocked!")
+                    else:
+                        # Detect gestures
+                        if self.gesture_recognizer:
+                            gesture, data = self.gesture_recognizer.end_touch(mouse_pos)
+                            if gesture:
+                                self.handle_gesture(gesture, data)
+                        
+                        if self.current_view == 'notepad':
+                            self.notepad_view.stop_drawing()
+                
                 elif event.type == pygame.MOUSEWHEEL:
-                    # Handle scrolling in notepad and text views
-                    if self.current_view == 'notepad':
-                        self.notepad_view.handle_scroll(event.y)
-                    elif self.current_view == 'text':
-                        self.text_view.handle_scroll(event.y)
+                    # Handle scrolling in notepad and text views (only when unlocked)
+                    if not self.is_locked:
+                        if self.current_view == 'notepad':
+                            self.notepad_view.handle_scroll(event.y)
+                        elif self.current_view == 'text':
+                            self.text_view.handle_scroll(event.y)
             
-            # Render current view to PORTRAIT surface (600x1024)
-            if self.current_view == 'home':
-                self.home_view.draw(
-                    self.portrait_surface,
-                    self.notebooks,
-                    self.keyboard,
-                    self.renaming_idx,
-                    self.temp_name
-                )
-            elif self.current_view == 'notepad':
-                notebook = self.notebooks[self.active_notebook_idx]
-                self.notepad_view.draw(self.portrait_surface, notebook)
-            elif self.current_view == 'text':
-                self.text_view.draw(self.portrait_surface)
+            # Render to PORTRAIT surface (600x1024)
+            if self.is_locked:
+                # Show lock screen
+                self.lock_screen.draw(self.portrait_surface)
+            else:
+                # Render current view
+                if self.current_view == 'home':
+                    self.home_view.draw(
+                        self.portrait_surface,
+                        self.notebooks,
+                        self.keyboard,
+                        self.renaming_idx,
+                        self.temp_name
+                    )
+                elif self.current_view == 'notepad':
+                    notebook = self.notebooks[self.active_notebook_idx]
+                    self.notepad_view.draw(self.portrait_surface, notebook)
+                elif self.current_view == 'text':
+                    self.text_view.draw(self.portrait_surface)
+                    
+                    # Show processing indicator
+                    if self.processing:
+                        overlay = pygame.Surface((600, 1024), pygame.SRCALPHA)
+                        overlay.fill((0, 0, 0, 128))
+                        self.portrait_surface.blit(overlay, (0, 0))
+                        msg = self.font_l.render("Processing...", True, COLOR_WHITE)
+                        self.portrait_surface.blit(msg, (300 - 100, 512))
                 
-                # Show processing indicator
-                if self.processing:
-                    overlay = pygame.Surface((600, 1024), pygame.SRCALPHA)
-                    overlay.fill((0, 0, 0, 128))
-                    self.portrait_surface.blit(overlay, (0, 0))
-                    msg = self.font_l.render("Processing...", True, COLOR_WHITE)
-                    self.portrait_surface.blit(msg, (300 - 100, 512))
-            
-            # Draw settings panels on top of everything (NEW!)
-            if ENHANCED_UI_AVAILABLE:
-                if self.show_wifi_panel and self.wifi_panel:
-                    self.wifi_panel.draw(self.portrait_surface)
-                
-                if self.show_battery_panel and self.battery_panel:
-                    self.battery_panel.draw(self.portrait_surface)
-                
-                if self.show_time_panel and self.time_panel:
-                    self.time_panel.draw(self.portrait_surface)
-                
-                # Draw gesture indicator
-                if self.gesture_indicator:
-                    self.gesture_indicator.draw(self.portrait_surface)
-                
-                # Draw gesture tutorial on first launch
-                if self.show_gesture_tutorial and self.gesture_tutorial:
-                    self.gesture_tutorial.draw(self.portrait_surface)
+                # Draw settings panels on top of everything (NEW!)
+                if ENHANCED_UI_AVAILABLE:
+                    if self.show_wifi_panel and self.wifi_panel:
+                        self.wifi_panel.draw(self.portrait_surface)
+                    
+                    if self.show_battery_panel and self.battery_panel:
+                        self.battery_panel.draw(self.portrait_surface)
+                    
+                    if self.show_time_panel and self.time_panel:
+                        self.time_panel.draw(self.portrait_surface)
+                    
+                    # Draw gesture indicator
+                    if self.gesture_indicator:
+                        self.gesture_indicator.draw(self.portrait_surface)
+                    
+                    # Draw gesture tutorial on first launch
+                    if self.show_gesture_tutorial and self.gesture_tutorial:
+                        self.gesture_tutorial.draw(self.portrait_surface)
             
             # Rotate portrait surface 90° counter-clockwise - buttons on LEFT side
             rotated = pygame.transform.rotate(self.portrait_surface, 90)
@@ -612,6 +635,24 @@ class ABookApp:
     
     def handle_home_click(self, pos):
         """Handle clicks on home view"""
+        # Check keyboard clicks first (improved keyboard)
+        if self.keyboard.visible:
+            result = self.keyboard.handle_click(pos)
+            if result:
+                action, data = result
+                if action == 'done':
+                    if self.renaming_idx is not None:
+                        self.notebooks[self.renaming_idx].name = self.temp_name
+                        self.keyboard.visible = False
+                        self.renaming_idx = None
+                    return
+                elif action == 'backspace':
+                    self.temp_name = self.temp_name[:-1]
+                    return
+                elif action == 'char':
+                    self.temp_name += data
+                    return
+        
         action, data = self.home_view.handle_click(
             pos,
             self.notebooks,
@@ -634,7 +675,8 @@ class ABookApp:
             folder = data
             if folder:
                 count = sum(1 for nb in self.notebooks if nb.folder == folder)
-                folder_names = {'notes': 'Note', 'books': 'Book'}
+                # FIXED: Added 'tests' folder support
+                folder_names = {'notes': 'Note', 'books': 'Book', 'tests': 'Test'}
                 new_name = f"{folder_names.get(folder, 'Note')} {count + 1}"
                 self.notebooks.append(Notebook(new_name, folder=folder))
         
@@ -656,25 +698,15 @@ class ABookApp:
         elif action == 'new_notebook':
             folder = data
             count = sum(1 for nb in self.notebooks if nb.folder == folder)
-            folder_names = {'notes': 'Note', 'books': 'Book'}
-            new_name = f"{folder_names[folder]} {count + 1}"
+            # FIXED: Added 'tests' folder support
+            folder_names = {'notes': 'Note', 'books': 'Book', 'tests': 'Test'}
+            new_name = f"{folder_names.get(folder, 'Note')} {count + 1}"
             self.notebooks.append(Notebook(new_name, folder=folder))
         
         elif action == 'start_rename':
             self.renaming_idx = data
             self.temp_name = self.notebooks[data].name
             self.keyboard.visible = True
-        
-        elif action == 'rename_done':
-            self.notebooks[self.renaming_idx].name = data
-            self.keyboard.visible = False
-            self.renaming_idx = None
-        
-        elif action == 'add_char':
-            self.temp_name += data
-        
-        elif action == 'backspace':
-            self.temp_name = self.temp_name[:-1]
     
     def handle_notepad_click(self, pos):
         """Handle clicks on notepad view"""
@@ -734,6 +766,18 @@ class ABookApp:
             self.notepad_view.show_layer_menu = not self.notepad_view.show_layer_menu
             self.notepad_view.show_template_menu = False
             self.notepad_view.show_search_panel = False
+        
+        elif action == 'close_layer_menu':
+            self.notepad_view.show_layer_menu = False
+        
+        elif action == 'delete_layer':
+            notebook = self.notebooks[self.active_notebook_idx]
+            if len(notebook.layers) > 1:  # Don't delete the last layer
+                del notebook.layers[self.active_layer_idx]
+                # Adjust active layer index
+                if self.active_layer_idx >= len(notebook.layers):
+                    self.active_layer_idx = len(notebook.layers) - 1
+                print(f"[Layers] Deleted layer, now have {len(notebook.layers)} layers")
         
         elif action == 'toggle_search':
             print(f"[DEBUG] Toggle search action received")
@@ -917,7 +961,6 @@ class ABookApp:
         print(f"Surface format: {surface.get_flags()}")
         
         # Check if there's actually anything drawn
-        # Get a small sample area to check
         try:
             pixel_data = pygame.surfarray.array3d(surface)
             import numpy as np

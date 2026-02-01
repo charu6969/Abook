@@ -3,7 +3,7 @@ Notepad view for ABook application - drawing interface with scrolling
 """
 import pygame
 from config import *
-from ui_components import draw_status_bar
+from improved_ui_components import draw_improved_status_bar
 
 try:
     from writing_assistant import get_writing_assistant
@@ -68,7 +68,7 @@ class NotepadView:
     def draw(self, screen, notebook):
         """Draw the notepad screen with left toolbar - BLACK AND WHITE THEME"""
         screen.fill(NOTEPAD_BG)  # Pure white background
-        draw_status_bar(screen, self.font_s)
+        draw_improved_status_bar(screen, self.font_s)
         
         # Get the canvas dimensions - PORTRAIT MODE
         portrait_width = 600
@@ -360,6 +360,14 @@ class NotepadView:
                     return ('select_template', template_name)
         
         if self.show_layer_menu:
+            # Check close button first
+            if hasattr(self, 'close_layer_menu_btn') and self.close_layer_menu_btn.collidepoint(pos):
+                return ('close_layer_menu', None)
+            
+            # Check delete layer button
+            if hasattr(self, 'delete_layer_btn') and self.delete_layer_btn and self.delete_layer_btn.collidepoint(pos):
+                return ('delete_layer', None)
+            
             # Check layer menu clicks first (higher priority)
             if hasattr(self, 'add_layer_btn') and self.add_layer_btn.collidepoint(pos):
                 return ('add_layer', None)
@@ -643,13 +651,13 @@ class NotepadView:
             y += 50
     
     def draw_layer_menu(self, screen, notebook):
-        """Draw enhanced layer management menu"""
+        """Draw enhanced layer management menu with close button"""
         if not self.show_layer_menu:
             return
         
         # Menu panel
-        panel_width = 280
-        panel_height = min(550, len(notebook.layers) * 70 + 150)
+        panel_width = 320
+        panel_height = min(600, len(notebook.layers) * 80 + 200)
         panel_x = self.toolbar_width + 20
         panel_y = 60
         
@@ -659,108 +667,138 @@ class NotepadView:
         shadow = panel.copy()
         shadow.x += 3
         shadow.y += 3
-        pygame.draw.rect(screen, (0, 0, 0, 30), shadow, border_radius=15)
+        pygame.draw.rect(screen, (200, 200, 200, 80), shadow, border_radius=15)
         
-        # Panel background
-        pygame.draw.rect(screen, COLOR_WHITE, panel, border_radius=15)
-        pygame.draw.rect(screen, COLOR_GRAY_300, panel, 2, border_radius=15)
+        # Panel background - GRAYSCALE
+        pygame.draw.rect(screen, (250, 250, 250), panel, border_radius=15)
+        pygame.draw.rect(screen, (150, 150, 150), panel, 2, border_radius=15)
         
-        # Title
-        title = self.font_l.render("Layers", True, COLOR_PRIMARY)
+        # Title bar with close button
+        title = self.font_l.render("Layers", True, (40, 40, 40))
         screen.blit(title, (panel_x + 20, panel_y + 15))
         
+        # Close button (X) - IMPORTANT FIX
+        self.close_layer_menu_btn = pygame.Rect(panel_x + panel_width - 45, panel_y + 12, 35, 35)
+        pygame.draw.rect(screen, (200, 200, 200), self.close_layer_menu_btn, border_radius=8)
+        # Draw X
+        x_center = self.close_layer_menu_btn.centerx
+        y_center = self.close_layer_menu_btn.centery
+        pygame.draw.line(screen, (60, 60, 60), 
+                        (x_center - 8, y_center - 8), 
+                        (x_center + 8, y_center + 8), 3)
+        pygame.draw.line(screen, (60, 60, 60), 
+                        (x_center + 8, y_center - 8), 
+                        (x_center - 8, y_center + 8), 3)
+        
         # Add layer button
-        self.add_layer_btn = pygame.Rect(panel_x + panel_width - 100, panel_y + 12, 85, 35)
-        pygame.draw.rect(screen, COLOR_SUCCESS, self.add_layer_btn, border_radius=8)
-        add_text = self.font_s.render("+ Add", True, COLOR_WHITE)
-        screen.blit(add_text, (self.add_layer_btn.centerx - 20, self.add_layer_btn.centery - 8))
+        self.add_layer_btn = pygame.Rect(panel_x + 20, panel_y + 60, 120, 38)
+        pygame.draw.rect(screen, (80, 80, 80), self.add_layer_btn, border_radius=8)
+        add_text = self.font_m.render("+ Add Layer", True, (255, 255, 255))
+        screen.blit(add_text, (self.add_layer_btn.centerx - 42, self.add_layer_btn.centery - 10))
+        
+        # Delete layer button (if more than 1 layer exists)
+        if len(notebook.layers) > 1:
+            self.delete_layer_btn = pygame.Rect(panel_x + 155, panel_y + 60, 145, 38)
+            pygame.draw.rect(screen, (160, 160, 160), self.delete_layer_btn, border_radius=8)
+            del_text = self.font_m.render("\u2212 Delete Current", True, (255, 255, 255))
+            screen.blit(del_text, (self.delete_layer_btn.centerx - 60, self.delete_layer_btn.centery - 10))
+        else:
+            self.delete_layer_btn = None
         
         # Layer list
-        y = panel_y + 65
+        y = panel_y + 115
         self.layer_rects = []
         self.layer_up_btns = []
         self.layer_down_btns = []
-        self.layer_duplicate_btns = []
-        self.layer_merge_btns = []
         
         for i, layer in enumerate(notebook.layers):
             if y > panel_y + panel_height - 80:
                 break
             
-            rect = pygame.Rect(panel_x + 15, y, panel_width - 30, 60)
+            rect = pygame.Rect(panel_x + 15, y, panel_width - 30, 65)
             
-            # Active layer highlight
-            color = COLOR_SECONDARY if i == 0 else COLOR_GRAY_100
+            # Active layer highlight - GRAYSCALE
+            if i == 0:  # Current active layer
+                color = (120, 120, 120)  # Dark gray for active
+                text_color = (255, 255, 255)
+                detail_color = (220, 220, 220)
+            else:
+                color = (240, 240, 240)  # Light gray for inactive
+                text_color = (40, 40, 40)
+                detail_color = (120, 120, 120)
+            
             pygame.draw.rect(screen, color, rect, border_radius=10)
+            pygame.draw.rect(screen, (180, 180, 180), rect, 1, border_radius=10)
             
             # Visibility toggle
-            vis_size = 24
+            vis_size = 28
             vis_rect = pygame.Rect(rect.x + 10, rect.centery - vis_size//2, vis_size, vis_size)
-            pygame.draw.rect(screen, COLOR_WHITE, vis_rect, border_radius=5)
+            pygame.draw.rect(screen, (255, 255, 255), vis_rect, border_radius=5)
+            pygame.draw.rect(screen, (120, 120, 120), vis_rect, 1, border_radius=5)
+            
             if layer.visible:
-                # Eye icon (visible)
-                pygame.draw.circle(screen, COLOR_PRIMARY, vis_rect.center, 6, 2)
-                pygame.draw.circle(screen, COLOR_PRIMARY, vis_rect.center, 3)
+                # Eye icon (visible) - GRAYSCALE
+                pygame.draw.ellipse(screen, (60, 60, 60), 
+                                  (vis_rect.centerx - 8, vis_rect.centery - 5, 16, 10), 2)
+                pygame.draw.circle(screen, (60, 60, 60), vis_rect.center, 3)
             else:
-                # Crossed eye (hidden)
-                pygame.draw.line(screen, COLOR_GRAY_400,
-                               (vis_rect.x + 3, vis_rect.y + 3),
-                               (vis_rect.right - 3, vis_rect.bottom - 3), 2)
+                # Crossed eye (hidden) - GRAYSCALE
+                pygame.draw.line(screen, (160, 160, 160),
+                               (vis_rect.x + 4, vis_rect.y + 4),
+                               (vis_rect.right - 4, vis_rect.bottom - 4), 2)
             
             # Layer name and info
             name_text = f"Layer {i+1}"
-            name_color = COLOR_WHITE if i == 0 else COLOR_GRAY_800
-            name_surf = self.font_m.render(name_text, True, name_color)
-            screen.blit(name_surf, (rect.x + 45, rect.y + 12))
+            name_surf = self.font_m.render(name_text, True, text_color)
+            screen.blit(name_surf, (rect.x + 48, rect.y + 12))
             
             template_text = f"({layer.template_name})"
-            template_color = COLOR_GRAY_300 if i == 0 else COLOR_GRAY_500
-            template_surf = self.font_s.render(template_text, True, template_color)
-            screen.blit(template_surf, (rect.x + 45, rect.y + 36))
+            template_surf = self.font_s.render(template_text, True, detail_color)
+            screen.blit(template_surf, (rect.x + 48, rect.y + 38))
             
-            # Action buttons (small)
-            btn_size = 24
+            # Action buttons (small) - Move up/down
+            btn_size = 26
             btn_x = rect.right - btn_size - 10
             
             # Up arrow (move layer up)
             if i > 0:
                 up_btn = pygame.Rect(btn_x, rect.y + 6, btn_size, btn_size)
-                pygame.draw.rect(screen, COLOR_ACCENT, up_btn, border_radius=5)
+                pygame.draw.rect(screen, (100, 100, 100), up_btn, border_radius=5)
                 # Arrow up
                 points = [
                     (up_btn.centerx, up_btn.y + 8),
                     (up_btn.x + 6, up_btn.centery + 2),
                     (up_btn.right - 6, up_btn.centery + 2)
                 ]
-                pygame.draw.polygon(screen, COLOR_WHITE, points)
+                pygame.draw.polygon(screen, (255, 255, 255), points)
                 self.layer_up_btns.append((up_btn, i))
             
             # Down arrow (move layer down)
             if i < len(notebook.layers) - 1:
                 down_btn = pygame.Rect(btn_x, rect.bottom - btn_size - 6, btn_size, btn_size)
-                pygame.draw.rect(screen, COLOR_ACCENT, down_btn, border_radius=5)
+                pygame.draw.rect(screen, (100, 100, 100), down_btn, border_radius=5)
                 # Arrow down
                 points = [
                     (down_btn.centerx, down_btn.bottom - 8),
                     (down_btn.x + 6, down_btn.centery - 2),
                     (down_btn.right - 6, down_btn.centery - 2)
                 ]
-                pygame.draw.polygon(screen, COLOR_WHITE, points)
+                pygame.draw.polygon(screen, (255, 255, 255), points)
                 self.layer_down_btns.append((down_btn, i))
             
             self.layer_rects.append((rect, vis_rect, i))
-            y += 65
+            y += 70
         
         # Layer operations bar at bottom
         ops_y = panel_y + panel_height - 50
         ops_rect = pygame.Rect(panel_x + 15, ops_y, panel_width - 30, 40)
-        pygame.draw.rect(screen, COLOR_GRAY_100, ops_rect, border_radius=8)
+        pygame.draw.rect(screen, (230, 230, 230), ops_rect, border_radius=8)
         
-        # Merge all visible button
-        merge_btn = pygame.Rect(ops_rect.x + 10, ops_rect.y + 8, 120, 24)
-        pygame.draw.rect(screen, COLOR_WARNING, merge_btn, border_radius=5)
-        merge_text = self.font_s.render("Merge All", True, COLOR_WHITE)
-        screen.blit(merge_text, (merge_btn.centerx - 35, merge_btn.centery - 7))
+        # Merge all visible button - GRAYSCALE
+        merge_btn = pygame.Rect(ops_rect.x + 10, ops_rect.y + 8, 140, 24)
+        pygame.draw.rect(screen, (140, 140, 140), merge_btn, border_radius=5)
+        merge_text = self.font_s.render("Merge All Visible", True, (255, 255, 255))
+        screen.blit(merge_text, (merge_btn.centerx - 52, merge_btn.centery - 7))
         self.merge_all_btn = merge_btn
     
     def draw_suggestions_panel(self, screen):
